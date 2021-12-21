@@ -123,15 +123,11 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                     callbackExecutor.execute(() -> {
                         var isShutdownNeeded = false;
 
-                        if (call.isCanceled()) {
+                        if (call.isCanceled())
                             isShutdownNeeded = callback.apply(null, new IOException(request() + CANCELED));
-                        } else {
-                            isShutdownNeeded = callback.apply(response, null);
-                        }
+                        else isShutdownNeeded = callback.apply(response, null);
 
-                        if (isShutdownNeeded) {
-                            shutdown();
-                        }
+                        if (isShutdownNeeded) shutdown();
                     });
                 }
 
@@ -140,18 +136,9 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                     callbackExecutor.execute(() -> {
                         var isShutdownNeeded = false;
 
-                        Throwable throwable;
-                        if (call.isCanceled()) {
-                            throwable = new IOException(request() + CANCELED);
-                        } else {
-                            throwable = t;
-                        }
+                        isShutdownNeeded = callback.apply(null, t);
 
-                        isShutdownNeeded = callback.apply(null, throwable);
-
-                        if (isShutdownNeeded) {
-                            shutdown();
-                        }
+                        if (isShutdownNeeded) shutdown();
                     });
                 }
             });
@@ -163,15 +150,11 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                 @Override
                 public void onResponse(@NotNull Call<T> call, @NotNull Response<T> response) {
                     callbackExecutor.execute(() -> {
-                        if (call.isCanceled()) {
+                        if (call.isCanceled())
                             onFailure.accept(new IOException(request() + CANCELED));
-                        } else {
-                            onSuccess.accept(response);
-                        }
+                        else onSuccess.accept(response);
 
-                        if (isShutdownNeeded) {
-                            shutdown();
-                        }
+                        if (isShutdownNeeded) shutdown();
                     });
                 }
 
@@ -180,9 +163,7 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                     callbackExecutor.execute(() -> {
                         onFailure.accept(t);
 
-                        if (isShutdownNeeded) {
-                            shutdown();
-                        }
+                        if (isShutdownNeeded) shutdown();
                     });
                 }
             });

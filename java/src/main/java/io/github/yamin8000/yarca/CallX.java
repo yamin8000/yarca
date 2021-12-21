@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import retrofit2.Call;
 import retrofit2.Response;
 
+@SuppressWarnings("unused")
 public interface CallX<T> extends Call<T> {
 
     static void doOnEvent(
@@ -54,6 +55,23 @@ public interface CallX<T> extends Call<T> {
     void async(@NotNull BiFunction<@Nullable Response<T>, @Nullable Throwable, @NotNull Boolean> callback);
 
     /**
+     * Calls {@link #async(BiFunction)} but instead of determining whether to shut down the client or not
+     * based on the return value of the callback function, it will be determined by the given boolean value.
+     *
+     * @param isShutdownNeeded The boolean value which determines whether to shut down the client or not.
+     * @param callback         The callback function.
+     */
+    default void async(
+            boolean isShutdownNeeded,
+            @NotNull BiConsumer<@Nullable Response<T>, @Nullable Throwable> callback
+    ) {
+        async((response, throwable) -> {
+            callback.accept(response, throwable);
+            return isShutdownNeeded;
+        });
+    }
+
+    /**
      * Calls {@link #async(BiFunction)} and automatically shuts down the client.
      *
      * @param callback The callback function.
@@ -78,7 +96,7 @@ public interface CallX<T> extends Call<T> {
     }
 
     /**
-     * Calls {@link #enqueueAsync(BiConsumer)}} and cancel call if lifecycle is destroyed
+     * Calls {@link #enqueueAsync(BiConsumer)}} and cancels call if lifecycle is destroyed
      *
      * @param lifecycleOwner owner of lifecycle
      * @param callback       The callback function.
@@ -89,19 +107,6 @@ public interface CallX<T> extends Call<T> {
     ) {
         doOnEvent(lifecycleOwner, Lifecycle.Event.ON_DESTROY, this::cancel);
         enqueueAsync(callback);
-    }
-
-    /**
-     * Calls {@link #asyncBody(boolean, BiConsumer)} with false parameter and returns the response body.
-     * <p>
-     * This method is useful when you want to get the response body without caring about the response status code.
-     * <p>
-     * This method don't care whether to shut down the client or not.
-     *
-     * @param callback The callback function.
-     */
-    default void enqueueAsyncBody(@NotNull BiConsumer<@Nullable T, @Nullable Throwable> callback) {
-        asyncBody(false, callback);
     }
 
     /**
@@ -129,20 +134,30 @@ public interface CallX<T> extends Call<T> {
     }
 
     /**
-     * Calls {@link #async(BiFunction)} but instead of determining whether to shut down the client or not
-     * based on the return value of the callback function, it will be determined by the given boolean value.
+     * Calls {@link #asyncBody(boolean, BiConsumer)} with false parameter and returns the response body.
+     * <p>
+     * This method is useful when you want to get the response body without caring about the response status code.
+     * <p>
+     * This method don't care whether to shut down the client or not.
      *
-     * @param isShutdownNeeded The boolean value which determines whether to shut down the client or not.
-     * @param callback         The callback function.
+     * @param callback The callback function.
      */
-    default void async(
-            boolean isShutdownNeeded,
-            @NotNull BiConsumer<@Nullable Response<T>, @Nullable Throwable> callback
+    default void enqueueAsyncBody(@NotNull BiConsumer<@Nullable T, @Nullable Throwable> callback) {
+        asyncBody(false, callback);
+    }
+
+    /**
+     * Calls {@link #enqueueAsync(BiConsumer)} and cancels call if lifecycle is destroyed
+     *
+     * @param lifecycleOwner owner of lifecycle
+     * @param callback       The callback function.
+     */
+    default void enqueueAsyncBody(
+            @NotNull LifecycleOwner lifecycleOwner,
+            @NotNull BiConsumer<@Nullable T, @Nullable Throwable> callback
     ) {
-        async((response, throwable) -> {
-            callback.accept(response, throwable);
-            return isShutdownNeeded;
-        });
+        doOnEvent(lifecycleOwner, Lifecycle.Event.ON_DESTROY, this::cancel);
+        enqueueAsyncBody(callback);
     }
 
     /**
