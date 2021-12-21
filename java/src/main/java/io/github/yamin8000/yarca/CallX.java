@@ -10,13 +10,47 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import retrofit2.Call;
+import retrofit2.Callback;
 import retrofit2.Response;
 
+/**
+ * An extension of {@link Call} that uses Java lambdas for the callbacks.
+ * <p>
+ * Callbacks are created using {@link Consumer}, {@link BiConsumer}, {@link BiFunction},
+ * which are usable with Java 8+ lambdas and also have interoperability with Kotlin.
+ * <h2>JVM</h2>
+ * By convention, <b>atomic</b> callbacks are those that would shut down the client when the call is done.
+ * This is useful for JVM only platforms, because OkHttp by default uses a non-daemon thread,
+ * this will prevent the JVM from exiting until they time out. see here:
+ * <p>
+ * {@link okhttp3.Dispatcher#executorService()}
+ * <h2>Android</h2>
+ * However, for Android, default executor should be MainThreadExecutor,
+ * which is tied to the UI thread.
+ * <p>
+ * {@link android.os.Handler}
+ * <p>
+ * {@link android.os.Looper}
+ * <p>
+ * So in conclusion, for Android it's better to use <b>enqueue</b> callbacks.
+ * <p>
+ *
+ * @param <T> Successful response body type.
+ */
 @SuppressWarnings("unused")
 public interface CallX<T> extends Call<T> {
 
+    /**
+     * Run a runnable after specific {@link Lifecycle.Event} is observed by the {@link LifecycleEventObserver}
+     * in the given {@link LifecycleOwner}
+     *
+     * @param lifecycleOwner owner of lifecycle that event is observed in it
+     * @param inputEvent     specific event that is set to be observed
+     * @param runnable       runnable (callback) or a function that would run after event observation
+     */
     static void doOnEvent(
             @NotNull LifecycleOwner lifecycleOwner,
             @NotNull Lifecycle.Event inputEvent,
@@ -26,6 +60,14 @@ public interface CallX<T> extends Call<T> {
             if (inputEvent == event) runnable.run();
         });
     }
+
+    /**
+     * A lambda wrapper around {@link Call#enqueue(Callback)}
+     *
+     * @param onResponse {@link Callback#onResponse(Call, Response)}
+     * @param onFailure  {@link Callback#onFailure(Call, Throwable)}
+     */
+    void enqueue(@NotNull BiConsumer<Call<T>, Response<T>> onResponse, @NotNull BiConsumer<Call<T>, Throwable> onFailure);
 
     /**
      * <b>General purpose async call method.</b>
@@ -96,7 +138,7 @@ public interface CallX<T> extends Call<T> {
     }
 
     /**
-     * Calls {@link #enqueueAsync(BiConsumer)}} and cancels call if lifecycle is destroyed
+     * Calls {@link #enqueueAsync(BiConsumer)} and cancels call if lifecycle is destroyed
      *
      * @param lifecycleOwner owner of lifecycle
      * @param callback       The callback function.
@@ -125,11 +167,8 @@ public interface CallX<T> extends Call<T> {
             @NotNull BiConsumer<@Nullable T, @Nullable Throwable> callback
     ) {
         async(isShutdownNeeded, (response, throwable) -> {
-            if (response == null) {
-                callback.accept(null, throwable);
-            } else {
-                callback.accept(response.body(), throwable);
-            }
+            if (response == null) callback.accept(null, throwable);
+            else callback.accept(response.body(), throwable);
         });
     }
 
@@ -174,6 +213,41 @@ public interface CallX<T> extends Call<T> {
     }
 
     /**
+     * <b>General purpose async call method with two callbacks</b>
+     *
+     * @param isShutdownNeeded The boolean value which determines whether to shut down the client or not.
+     * @param onSuccess        The callback function which is called when an HTTP response is received and is not canceled.
+     * @param onFailure        The callback function which is called when a network exception occurred talking to the server or
+     *                         when an unexpected exception occurred creating the request or processing the response.
+     */
+    void async(
+            boolean isShutdownNeeded,
+            @NotNull Consumer<@Nullable Response<T>> onSuccess,
+            @NotNull Consumer<@Nullable Throwable> onFailure
+    );
+
+    /**
+     * Calls {@link #async(boolean, Consumer, Consumer)} and returns the response body.
+     * * <p>
+     * * This method is useful when you want to get the response body without caring about the response status code or headers.
+     *
+     * @param isShutdownNeeded The boolean value which determines whether to shut down the client or not.
+     * @param onSuccess        The callback function which is called when an HTTP response is received and is not canceled.
+     * @param onFailure        The callback function which is called when a network exception occurred talking to the server or
+     *                         when an unexpected exception occurred creating the request or processing the response.
+     */
+    default void asyncBody(
+            boolean isShutdownNeeded,
+            @NotNull Consumer<@Nullable T> onSuccess,
+            @NotNull Consumer<@Nullable Throwable> onFailure
+    ) {
+        async(isShutdownNeeded, (response) -> {
+            if (response != null) onSuccess.accept(response.body());
+            else onSuccess.accept(null);
+        }, onFailure);
+    }
+
+    /**
      * Calls {@link #async(boolean, Consumer, Consumer)} and automatically shuts down the client.
      *
      * @param onSuccess The callback function which is called when an HTTP response is received and is not canceled.
@@ -188,20 +262,6 @@ public interface CallX<T> extends Call<T> {
     }
 
     /**
-     * <b>General purpose async call method with two callbacks</b>
-     *
-     * @param isShutdownNeeded The boolean value which determines whether to shut down the client or not.
-     * @param onSuccess        The callback function which is called when an HTTP response is received and is not canceled.
-     * @param onFailure        The callback function which is called when a network exception occurred talking to the server or
-     *                         when an unexpected exception occurred creating the request or processing the response.
-     */
-    void async(
-            boolean isShutdownNeeded,
-            @NotNull Consumer<@Nullable Response<T>> onSuccess,
-            @NotNull Consumer<Throwable> onFailure
-    );
-
-    /**
      * Calls {@link #async(boolean, Consumer, Consumer)} and doesn't care whether to shut down the client or not.
      *
      * @param onSuccess The callback function which is called when an HTTP response is received and is not canceled.
@@ -212,5 +272,37 @@ public interface CallX<T> extends Call<T> {
             @NotNull Consumer<Throwable> onFailure
     ) {
         async(false, onSuccess, onFailure);
+    }
+
+    /**
+     * Calls {@link #asyncBody(boolean, Consumer, Consumer)} with false parameter so it doesn't care about whether to shut down client or not
+     *
+     * @param onSuccess The callback function which is called when an HTTP response is received and is not canceled.
+     * @param onFailure The callback function which is called when a network exception occurred talking to the server or
+     */
+    default void enqueueAsyncBody(
+            @NotNull Consumer<@Nullable T> onSuccess,
+            @NotNull Consumer<@Nullable Throwable> onFailure
+    ) {
+        asyncBody(false, onSuccess, onFailure);
+    }
+
+    /**
+     * Calls {@link #enqueueAsync(Consumer, Consumer)} and definitely returns a Non Null response body,
+     * Actually if response body is null then default value provided by defaultValueSupplier is returned.
+     *
+     * @param onSuccess            The callback function which is called when an HTTP response is received and is not canceled.
+     * @param onFailure            The callback function which is called when a network exception occurred talking to the server or
+     * @param defaultValueSupplier a supplier for supplying a default value in case response body is null
+     */
+    default void enqueueAsyncBody(
+            @NotNull Consumer<@NotNull T> onSuccess,
+            @NotNull Consumer<@Nullable Throwable> onFailure,
+            @NotNull Supplier<@NotNull T> defaultValueSupplier
+    ) {
+        enqueueAsyncBody((response) -> {
+            if (response == null) onSuccess.accept(defaultValueSupplier.get());
+            else onSuccess.accept(response);
+        }, onFailure);
     }
 }

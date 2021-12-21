@@ -4,10 +4,11 @@ import android.os.Bundle;
 import android.util.Log;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
+import androidx.lifecycle.Lifecycle;
+
+import java.util.ArrayList;
 
 import io.github.yamin8000.yarca.databinding.ActivityMainBinding;
-import okhttp3.OkHttpClient;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
@@ -23,22 +24,31 @@ public class MainActivity extends AppCompatActivity {
 
         Log.d("test", "hello there");
 
-        var client = new OkHttpClient.Builder().build();
-        var executor = ContextCompat.getMainExecutor(this);
-        var callAdapter = new CallXAdapterFactory(client, executor);
-
         var retrofit = new Retrofit.Builder()
                 .baseUrl("https://jsonplaceholder.typicode.com/")
                 .addConverterFactory(GsonConverterFactory.create())
-                .addCallAdapterFactory(callAdapter)
+                .addCallAdapterFactory(new CallXAdapterFactory())
                 .build();
 
         var api = retrofit.create(APIs.class).getPosts();
-        api.enqueueAsync(this, ((listResponse, throwable) -> {
-            if (listResponse != null && throwable == null)
-                binding.text.setText(String.valueOf(listResponse.code()));
-            else Log.d("-#-", throwable.getMessage());
-        }));
+
+        var defaultPosts = new ArrayList<Post>();
+        defaultPosts.add(new Post("1", "1", "yamin", "yamin yamin"));
+        defaultPosts.add(new Post("1", "1", "yamin", "yamin yamin"));
+
+        CallX.doOnEvent(this, Lifecycle.Event.ON_DESTROY, api::cancel);
+
+        api.enqueueAsyncBody((response) -> {
+            Log.d("test", String.valueOf(response.size()));
+        }, (error) -> {
+            Log.d("test", error.getMessage());
+        }, () -> defaultPosts);
+
+//        api.enqueueAsync(this, ((listResponse, throwable) -> {
+//            if (listResponse != null && throwable == null)
+//                binding.text.setText(String.valueOf(listResponse.code()));
+//            else Log.d("-#-", throwable.getMessage());
+//        }));
 
         //cancelOnDestroy(this, () -> api);
 

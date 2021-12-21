@@ -1,12 +1,14 @@
 package io.github.yamin8000.yarca;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.concurrent.Executor;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
@@ -21,39 +23,46 @@ import retrofit2.Retrofit;
 
 class CallXAdapterFactory extends CallAdapter.Factory {
 
-    private static OkHttpClient okHttpClient;
-    private static Executor callbackExecutor;
+    @Nullable
+    private final OkHttpClient okHttpClient;
+    private final Executor callbackExecutor;
 
-    public CallXAdapterFactory(OkHttpClient okHttpClient) {
-        CallXAdapterFactory.okHttpClient = okHttpClient;
-        callbackExecutor = okHttpClient.dispatcher().executorService();
+    public CallXAdapterFactory() {
+        this(null);
     }
 
-    public CallXAdapterFactory(OkHttpClient okHttpClient, Executor callbackExecutor) {
-        CallXAdapterFactory.okHttpClient = okHttpClient;
-        CallXAdapterFactory.callbackExecutor = callbackExecutor;
+    public CallXAdapterFactory(@Nullable OkHttpClient okHttpClient) {
+        this.okHttpClient = okHttpClient;
+        this.callbackExecutor = new Util.MainThreadExecutor();
+    }
+
+    public CallXAdapterFactory(@Nullable OkHttpClient okHttpClient, Executor callbackExecutor) {
+        this.okHttpClient = okHttpClient;
+        this.callbackExecutor = callbackExecutor;
     }
 
     @Override
     public CallAdapter<?, ?> get(@NotNull Type type, Annotation @NotNull [] annotations, @NotNull Retrofit retrofit) {
         //this line will allow retrofit to use default call adapter for types other than CallX
-        if (getRawType(type) != CallX.class) {
-            return null;
-        }
+        if (getRawType(type) != CallX.class) return null;
 
-        if (!(type instanceof ParameterizedType)) {
-            throw new IllegalStateException("Call must have generic type (e.g., Call<ResponseBody>)");
-        }
+        if (!(type instanceof ParameterizedType))
+            throw new IllegalStateException("Call return type must be parameterized as Call<Foo> or Call<? extends Foo>");
 
         final Type responseType = getParameterUpperBound(0, (ParameterizedType) type);
-        return new CallXAdapter<>(responseType);
+        return new CallXAdapter<>(responseType, okHttpClient, callbackExecutor);
     }
 
     private static final class CallXAdapter<R> implements CallAdapter<R, CallX<R>> {
         private final Type responseType;
+        @Nullable
+        private final OkHttpClient okHttpClient;
+        private final Executor callbackExecutor;
 
-        CallXAdapter(Type responseType) {
+        CallXAdapter(Type responseType, @Nullable OkHttpClient okHttpClient, Executor callbackExecutor) {
             this.responseType = responseType;
+            this.okHttpClient = okHttpClient;
+            this.callbackExecutor = callbackExecutor;
         }
 
         @Override
@@ -63,16 +72,21 @@ class CallXAdapterFactory extends CallAdapter.Factory {
 
         @Override
         public @NotNull CallX<R> adapt(@NotNull Call<R> call) {
-            return new MyCallXAdapter<>(call);
+            return new MyCallXAdapter<>(call, okHttpClient, callbackExecutor);
         }
     }
 
     private static class MyCallXAdapter<T> implements CallX<T> {
         private static final String CANCELED = " Canceled";
         private final Call<T> call;
+        @Nullable
+        private final OkHttpClient okHttpClient;
+        private final Executor callbackExecutor;
 
-        MyCallXAdapter(Call<T> call) {
+        MyCallXAdapter(Call<T> call, @Nullable OkHttpClient okHttpClient, Executor callbackExecutor) {
             this.call = call;
+            this.okHttpClient = okHttpClient;
+            this.callbackExecutor = callbackExecutor;
         }
 
         @Override
@@ -112,7 +126,22 @@ class CallXAdapterFactory extends CallAdapter.Factory {
 
         @Override
         public @NotNull Call<T> clone() {
-            return new MyCallXAdapter<>(call.clone());
+            return new MyCallXAdapter<>(call.clone(), okHttpClient, callbackExecutor);
+        }
+
+        @Override
+        public void enqueue(@NotNull BiConsumer<Call<T>, Response<T>> onResponse, @NotNull BiConsumer<Call<T>, Throwable> onFailure) {
+            call.enqueue(new Callback<>() {
+                @Override
+                public void onResponse(@NotNull Call<T> call, @NotNull Response<T> response) {
+                    callbackExecutor.execute(() -> onResponse.accept(call, response));
+                }
+
+                @Override
+                public void onFailure(@NotNull Call<T> call, @NotNull Throwable t) {
+                    callbackExecutor.execute(() -> onFailure.accept(call, t));
+                }
+            });
         }
 
         @Override
@@ -127,7 +156,7 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                             isShutdownNeeded = callback.apply(null, new IOException(request() + CANCELED));
                         else isShutdownNeeded = callback.apply(response, null);
 
-                        if (isShutdownNeeded) shutdown();
+                        if (isShutdownNeeded) shutdown(okHttpClient);
                     });
                 }
 
@@ -138,7 +167,7 @@ class CallXAdapterFactory extends CallAdapter.Factory {
 
                         isShutdownNeeded = callback.apply(null, t);
 
-                        if (isShutdownNeeded) shutdown();
+                        if (isShutdownNeeded) shutdown(okHttpClient);
                     });
                 }
             });
@@ -154,7 +183,7 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                             onFailure.accept(new IOException(request() + CANCELED));
                         else onSuccess.accept(response);
 
-                        if (isShutdownNeeded) shutdown();
+                        if (isShutdownNeeded) shutdown(okHttpClient);
                     });
                 }
 
@@ -163,7 +192,7 @@ class CallXAdapterFactory extends CallAdapter.Factory {
                     callbackExecutor.execute(() -> {
                         onFailure.accept(t);
 
-                        if (isShutdownNeeded) shutdown();
+                        if (isShutdownNeeded) shutdown(okHttpClient);
                     });
                 }
             });
@@ -173,8 +202,10 @@ class CallXAdapterFactory extends CallAdapter.Factory {
          * By default, OkHttp uses non-daemon thread,
          * this will prevent the JVM from exiting until they time out.
          * so this method is used for shutting down threads manually.
+         * <p>
+         * This method is not necessary if Platform is Android.
          */
-        private void shutdown() {
+        private void shutdown(@Nullable OkHttpClient okHttpClient) {
             if (okHttpClient != null) {
                 okHttpClient.dispatcher().executorService().shutdown();
                 okHttpClient.connectionPool().evictAll();
