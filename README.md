@@ -1,11 +1,11 @@
 # yarca or Yet Another Retrofit Call Adapter
 
-**yarca** is an opinionated retrofit call adapter. it's the result of multiple iterations of custom retrofit call adapters
-that I used in various personal projects.
+**yarca** is an opinionated retrofit call adapter. it's the result of multiple iterations of custom
+retrofit call adapters that I used in various personal projects.
 
-The fundamental difference between this call adapter and the default retrofit call adapter is that this adapter's callbacks use Java
-lambda expressions instead of default unpleasant anonymous class callbacks. This library provides multiple ways to handle
-response and error using various callbacks.
+The fundamental difference between this call adapter and the default retrofit call adapter is that
+this adapter's callbacks use Java lambda expressions instead of default unpleasant anonymous class
+callbacks. This library provides multiple ways to handle response and error using various callbacks.
 
 ---
 
