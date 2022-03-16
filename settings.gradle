@@ -4,6 +4,11 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
     }
+    plugins.withId("com.vanniktech.maven.publish") {
+        mavenPublish {
+            sonatypeHost = "S01"
+        }
+    }
 }
 rootProject.name = "yarca"
 include ':app'
