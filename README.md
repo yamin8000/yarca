@@ -1,11 +1,11 @@
 # yarca or Yet Another Retrofit Call Adapter
 
-**yarca** is an opinionated retrofit call adapter. it's the result of multiple iterations of custom
-retrofit call adapters that I used in various personal projects.
+**yarca** is an opinionated retrofit call adapter. it's the result of multiple iterations of custom retrofit call
+adapters that I used in various personal projects.
 
-The fundamental difference between this call adapter and the default retrofit call adapter is that
-this adapter's callbacks use Java lambda expressions instead of default unpleasant anonymous class
-callbacks. This library provides multiple ways to handle response and error using various callbacks.
+The fundamental difference between this call adapter and the default retrofit call adapter is that this adapter's
+callbacks use Java lambda expressions instead of default unpleasant anonymous class callbacks. This library provides
+multiple ways to handle response and error using various callbacks.
 
 ---
 
@@ -23,7 +23,7 @@ callbacks. This library provides multiple ways to handle response and error usin
 
 ## Preview
 
-WIP
+![preview](preview/1.png)
 
 ## Compatibility
 
@@ -31,7 +31,35 @@ WIP
 
 ## Usage
 
-WIP
+1. Add it to your retrofit builder:
+
+```java
+var retrofit=new Retrofit.Builder()
+        .baseUrl(...)
+        .addConverterFactory(...)
+        .addCallAdapterFactory(new CallXAdapterFactory())
+        .build();
+```
+
+2. Define your API return type with `CallX` instead of `Call`
+
+```java
+interface APIs {
+
+    @GET("posts")
+    CallX<List<Post>> getPosts();
+}
+```
+
+3. Use it in your API call:
+
+```java
+api.enqueue((call,response)->{
+        //handle response
+        },(call,error)->{
+        //handle error
+        });
+```
 
 ## Download
 
@@ -81,11 +109,68 @@ dependencies {
 
 ## Features
 
-WIP
+There are different methods and callbacks, here is the table of some of them:
+
+<table>
+<tr>
+<th>Type</th>
+<th>Description</th>
+<th>Code Example</th>
+</tr>
+
+<tr>
+<td><code>enqueue</code></td>
+<td>A lambda wrapper around default <code>enqueue</code> method</td>
+<td><pre>
+api.enqueue((call,response)->{
+    //handle response
+}, (call,error)->{
+    //handle error
+});
+</pre></td>
+</tr>
+
+<tr>
+<td><code>async</code></td>
+<td>General purpose async call method.</td>
+<td><pre>
+api.async((response, error) -> {
+    //handle response and error
+    boolean isShuttingDown = false;
+    return isShuttingDown;
+});
+</pre></td>
+</tr>
+
+<tr>
+<td><code>atomicAsync</code></td>
+<td>Calls <code>async</code> and automatically shuts down the client.</td>
+<td><pre>
+
+</pre></td>
+</tr>
+
+<tr>
+<td><code>enqueueAsync</code></td>
+<td>Calls <code>async</code> and doesn't care whether to shut down the client or not.</td>
+<td><pre>
+
+</pre></td>
+</tr>
+
+<tr>
+<td><code>asyncBody</code></td>
+<td>Calls <code>async</code> but returns response body instead of <code>OkHttp's</code> Response class</td>
+<td><pre>
+
+</pre></td>
+</tr>
+
+</table>
 
 ## Changelog
 
-WIP
+- 1.0.0 - Initial release
 
 ## License
 

@@ -32,6 +32,12 @@ public class MainActivity extends AppCompatActivity {
 
         var api = retrofit.create(APIs.class).getPosts();
 
+        api.enqueue((call, response) -> {
+            //handle response
+        }, (call, error) -> {
+            //handle error
+        });
+
         var defaultPosts = new ArrayList<Post>();
         defaultPosts.add(new Post("1", "1", "yamin", "yamin yamin"));
         defaultPosts.add(new Post("1", "1", "yamin", "yamin yamin"));
@@ -43,6 +49,11 @@ public class MainActivity extends AppCompatActivity {
         }, (error) -> {
             Log.d("test", error.getMessage());
         }, () -> defaultPosts);
+
+        api.async((call, response) -> {
+            var posts = response;
+            return false;
+        });
 
 //        api.enqueueAsync(this, ((listResponse, throwable) -> {
 //            if (listResponse != null && throwable == null)
